@@ -54,12 +54,11 @@ The original campaign export is retained separately from the prepared data. The 
 - Checking submission timestamps.
 - Identifying repeated values in email, phone, and IP fields.
 
-Phone numbers are standardised to a consistent format so that equivalent numbers are easier to compare. For example:
+Phone numbers are normalised to a consistent local format so that equivalent numbers are easier to compare. For example:
 
 | Original phone number | Normalised phone number |
 | --- | --- |
-| `+263771000001` | `+263771000001` |
-| `0771000001` | `+263771000001` |
+| `+263771000001` | `0771000001` |
 
 Normalised values are used for comparison; they are not evidence that two people are necessarily the same person.
 
