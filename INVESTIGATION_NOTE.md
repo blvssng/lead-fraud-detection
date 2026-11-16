@@ -52,7 +52,7 @@ Do not label or reject these entrants as fraudulent on this dataset alone. Keep 
 
 ## AI-use note
 
-AI assistance was used to review the initial implementation, identify execution/setup and edge-case risks, structure the README and tests, and help explain the rule outcomes. The rules, assumptions and final decisions should be understood and defended by the candidate; the tool does not infer confirmed fraud.
+AI assistance was used to review the initial implementation, identify execution/setup and edge-case risks, structure the README and tests, and help explain the rule outcomes.
 
 ## Implementation note
 
