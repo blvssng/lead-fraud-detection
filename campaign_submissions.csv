@@ -1,0 +1,11 @@
+id,time,email,phone,ip,source
+L01,09:00:00,asha@example.com,+263771000001,192.0.2.10,website
+L02,09:02:00,asha@example.com,0771000001,192.0.2.10,website
+L03,09:15:01,entry01@example.com,0771000100,192.0.2.20,partner_a
+L04,09:15:04,entry02@example.com,0771000100,192.0.2.21,partner_a
+L05,09:15:07,entry03@example.com,0771000100,192.0.2.22,partner_a
+L06,09:20:01,tariro@example.com,0771000006,192.0.2.30,event_qr
+L07,09:20:06,rudo@example.com,0771000007,192.0.2.30,event_qr
+L08,09:20:09,farai@example.com,0771000008,192.0.2.30,event_qr
+L09,09:40:00,nyasha@example.com,,192.0.2.40,partner_a
+L10,10:05:00,simba@example.com,0771000010,192.0.2.50,partner_a

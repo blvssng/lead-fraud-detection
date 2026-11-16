@@ -1,0 +1,11 @@
+id,time,email,phone,ip,source,email_normalised,phone_normalised,status,reason,related_ids,review_notes,data_quality_notes
+L01,09:00:00,asha@example.com,+263771000001,192.0.2.10,website,asha@example.com,+263771000001,count,No configured review rule triggered,,,
+L02,09:02:00,asha@example.com,0771000001,192.0.2.10,website,asha@example.com,+263771000001,duplicate,Email matches earlier submission L01 after trimming whitespace and lowercasing,L01,,
+L03,09:15:01,entry01@example.com,0771000100,192.0.2.20,partner_a,entry01@example.com,+263771000100,hold_for_review,3 distinct emails share a normalised phone number from source 'partner_a' within 10 seconds,L04;L05,,
+L04,09:15:04,entry02@example.com,0771000100,192.0.2.21,partner_a,entry02@example.com,+263771000100,hold_for_review,3 distinct emails share a normalised phone number from source 'partner_a' within 10 seconds,L03;L05,,
+L05,09:15:07,entry03@example.com,0771000100,192.0.2.22,partner_a,entry03@example.com,+263771000100,hold_for_review,3 distinct emails share a normalised phone number from source 'partner_a' within 10 seconds,L03;L04,,
+L06,09:20:01,tariro@example.com,0771000006,192.0.2.30,event_qr,tariro@example.com,+263771000006,count,No configured review rule triggered,,"Shares IP 192.0.2.30 with L07, L08 within 10s; source 'event_qr' is a configured shared-network source, so not held",
+L07,09:20:06,rudo@example.com,0771000007,192.0.2.30,event_qr,rudo@example.com,+263771000007,count,No configured review rule triggered,,"Shares IP 192.0.2.30 with L06, L08 within 10s; source 'event_qr' is a configured shared-network source, so not held",
+L08,09:20:09,farai@example.com,0771000008,192.0.2.30,event_qr,farai@example.com,+263771000008,count,No configured review rule triggered,,"Shares IP 192.0.2.30 with L06, L07 within 10s; source 'event_qr' is a configured shared-network source, so not held",
+L09,09:40:00,nyasha@example.com,,192.0.2.40,partner_a,nyasha@example.com,,count,No configured review rule triggered,,,Missing phone
+L10,10:05:00,simba@example.com,0771000010,192.0.2.50,partner_a,simba@example.com,+263771000010,count,No configured review rule triggered,,,

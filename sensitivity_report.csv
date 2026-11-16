@@ -1,0 +1,17 @@
+scenario,setting,source,raw,duplicates,holds,provisional_count,upper_bound,provisional_vs_baseline,rows_changed
+baseline,Default rules,event_qr,3,0,0,3,3,0,
+baseline,Default rules,partner_a,5,0,3,2,5,0,
+baseline,Default rules,website,2,1,0,1,1,0,
+baseline,Default rules,TOTAL,10,1,3,6,9,0,
+min_shared_phone_entries=4,Require 4 distinct emails instead of 3 for a shared-phone hold,event_qr,3,0,0,3,3,0,
+min_shared_phone_entries=4,Require 4 distinct emails instead of 3 for a shared-phone hold,partner_a,5,0,0,5,5,3,
+min_shared_phone_entries=4,Require 4 distinct emails instead of 3 for a shared-phone hold,website,2,1,0,1,1,0,
+min_shared_phone_entries=4,Require 4 distinct emails instead of 3 for a shared-phone hold,TOTAL,10,1,0,9,9,3,L03: hold_for_review->count; L04: hold_for_review->count; L05: hold_for_review->count
+burst_window_seconds=5,Use a 5-second shared-phone window instead of 10 seconds,event_qr,3,0,0,3,3,0,
+burst_window_seconds=5,Use a 5-second shared-phone window instead of 10 seconds,partner_a,5,0,0,5,5,3,
+burst_window_seconds=5,Use a 5-second shared-phone window instead of 10 seconds,website,2,1,0,1,1,0,
+burst_window_seconds=5,Use a 5-second shared-phone window instead of 10 seconds,TOTAL,10,1,0,9,9,3,L03: hold_for_review->count; L04: hold_for_review->count; L05: hold_for_review->count
+no_shared_network_exemption,Apply the shared-IP hold rule to event_qr as well,event_qr,3,0,3,0,3,-3,
+no_shared_network_exemption,Apply the shared-IP hold rule to event_qr as well,partner_a,5,0,3,2,5,0,
+no_shared_network_exemption,Apply the shared-IP hold rule to event_qr as well,website,2,1,0,1,1,0,
+no_shared_network_exemption,Apply the shared-IP hold rule to event_qr as well,TOTAL,10,1,6,3,9,-3,L06: count->hold_for_review; L07: count->hold_for_review; L08: count->hold_for_review

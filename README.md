@@ -1,95 +1,98 @@
-# Campaign Lead Fraud Review Tool
+# Campaign Lead Review
 
-A small Python tool for reviewing prize-campaign submissions for potential duplicates and suspicious patterns.
+A small, deterministic Python tool for reviewing campaign landing-page submissions. It assigns each row exactly one status: `count`, `duplicate`, or `hold_for_review`.
 
-## Project overview
+**Important:** a hold means "uncertain / investigate", not "fraud". The supplied export has no confirmed fraud labels.
 
-The tool helps campaign operators identify submissions that may need to be excluded from provisional counts or reviewed further. It applies configured rules to submission data and assigns each record a review status.
+## Requirements
 
-The tool does not determine whether a person has committed fraud. Its classifications are intended to support reporting and human review:
-
-- **Count** — No configured rule has identified a reason to provisionally exclude the submission.
-- **Duplicate** — The submission matches an earlier submission under the configured duplicate rule.
-- **Hold for review** — The submission has a pattern that warrants further investigation.
-
-A **Hold for review** status is not proof of fraud. Decisions about submissions should be made through appropriate human review.
+- Python 3.10+
+- No third-party packages; the tool uses Python's standard library.
 
 ## Project structure
 
-The project is organised as follows:
-
 ```text
 campaign-lead-review/
-│
-├── data/
-│   ├── raw/
-│   │   └── campaign_submissions.csv
-│   │
-│   └── processed/
-│       └── campaign_submissions_prepared.xlsx
-│
-├── src/
-│   └── lead_review.py
-│
+├── campaign_review.py
+├── data/raw/campaign_submissions.csv
+├── outputs/                         # generated reports
 ├── tests/
-│   └── test_lead_review.py
-│
-├── outputs/
-│   ├── reviewed_submissions.csv
-│   └── source_reconciliation.csv
-│
+│   └── test_campaign_review.py
 ├── requirements.txt
-└── README.md
+├── README.md
+└── INVESTIGATION_NOTE.md
 ```
 
-The Excel workbook contains the prepared dataset and documents the data-normalisation work completed before the Python analysis.
+## Setup
 
-## Data preparation
+From the project root:
 
-The original campaign export is retained separately from the prepared data. The Excel workbook is used to inspect and prepare submissions, including:
+```bash
+python -m venv .venv
+```
 
-- Standardising phone-number formats.
-- Checking for missing values.
-- Reviewing email addresses for inconsistent formatting.
-- Checking submission timestamps.
-- Identifying repeated values in email, phone, and IP fields.
+Activate it:
 
-Phone numbers are normalised to a consistent local format so that equivalent numbers are easier to compare. For example:
+- macOS/Linux: `source .venv/bin/activate`
+- Windows PowerShell: `.venv\\Scripts\\Activate.ps1`
 
-| Original phone number | Normalised phone number |
-| --- | --- |
-| `+263771000001` | `0771000001` |
+There are no third-party dependencies. You can run the script directly with Python 3.10 or newer.
 
-Normalised values are used for comparison; they are not evidence that two people are necessarily the same person.
+## Run
 
-The raw export should remain unchanged so that the preparation and review process can be audited.
+Baseline review:
 
-## Detection approach
+```bash
+python campaign_review.py
+```
 
-The tool uses deterministic rules supported by identity-relationship analysis.
+Baseline plus threshold/rule sensitivity analysis:
 
-### Rule 1: Duplicate email
+```bash
+python campaign_review.py --sensitivity
+```
 
-Email addresses are trimmed of surrounding whitespace and converted to lowercase before comparison. Where the same normalised email appears more than once, the earliest submission is retained and subsequent submissions are marked as duplicates.
+The supplied synthetic numbers are Zimbabwean. The built-in normaliser intentionally validates only Zimbabwean mobile formats; other regions are left unvalidated rather than guessed:
 
-### Rule 2: Shared-phone burst
+```bash
+python campaign_review.py --default-region ZW --sensitivity
+```
 
-A group is held for review when all of the following apply:
+To use another input file or output directory:
 
-- At least three submissions share the same normalised phone number.
-- The submissions come from the same referral source.
-- The time between the first and last submission is no more than 10 seconds.
-- The submissions have distinct normalised email addresses.
-- The entire group is held because the available information does not establish which submission, if any, is genuine.
+```bash
+python campaign_review.py --input path/to/submissions.csv --output-dir path/to/reports
+```
 
-### Rule 3: Shared IP address
+## Outputs
 
-A shared IP address alone does not cause a submission to be excluded. This is important because attendees at the in-person event used shared Wi‑Fi.
+- `outputs/reviewed_submissions.csv`: one decision per submission, reason, related IDs, normalised values and data-quality/review notes.
+- `outputs/source_reconciliation.csv`: raw, duplicate, held and provisional counts by source, plus an upper bound (`provisional_count + holds`).
+- `outputs/sensitivity_report.csv`: generated only with `--sensitivity`; compares the baseline with alternative settings.
 
-### Rule 4: Rapid submissions
+The reconciliation is designed to balance for every source:
 
-Rapid submissions alone do not result in exclusion. Timing is considered alongside other evidence.
+`raw = duplicates + holds + provisional_count`
 
-### Rule 5: Missing phone number
+The provisional client figure excludes duplicates and held rows. The upper bound shows the count if every held row is later cleared.
 
-A missing phone number is recorded as a data-quality warning. It does not automatically exclude a submission, assuming the campaign did not make the phone field mandatory.
+## Tests
+
+Run the automated tests from the project root:
+
+```bash
+python -m unittest discover -s tests -v
+```
+
+The tests cover duplicate normalisation, shared-phone burst detection, the event-Wi-Fi exemption, missing phone data, reconciliation arithmetic and sensitivity effects.
+
+## Rules and assumptions
+
+1. Duplicate email has precedence over all other rules. The earliest parseable timestamp is retained; equal or unparseable times preserve input order.
+2. A shared phone is held when at least 3 distinct normalised emails share it within 10 seconds, within the same source.
+3. A shared IP is held at 3 distinct emails within 10 seconds, within the same source, except sources configured as shared networks. `event_qr` is exempt because the brief says attendees used shared Wi-Fi.
+4. Smaller phone sharing is noted for review but does not change the count.
+5. Missing/invalid data is recorded as a data-quality note. Missing phone numbers cannot trigger phone-based rules.
+6. The brief states that all timestamps are on the same day and in the same time zone; the parser therefore uses time-of-day values.
+
+These are triage rules, not proof of manipulation. A real deployment should validate thresholds against campaign context and obtain corroborating evidence before excluding leads.
