@@ -4,7 +4,7 @@ A small Python tool for reviewing prize-campaign submissions for potential dupli
 
 ## Project overview
 
-The tool helps campaign operators identify submissions that may need to be excluded from provisional counts or reviewed further. It applies configured rules to submission data and assigns each record a review status and reason.
+The tool helps campaign operators identify submissions that may need to be excluded from provisional counts or reviewed further. It applies configured rules to submission data and assigns each record a review status.
 
 The tool does not determine whether a person has committed fraud. Its classifications are intended to support reporting and human review:
 
@@ -68,29 +68,28 @@ The raw export should remain unchanged so that the preparation and review proces
 
 The tool uses deterministic rules supported by identity-relationship analysis.
 
-# Rule 1: Duplicate email
+### Rule 1: Duplicate email
 
-Email addresses are trimmed of surrounding whitespace and converted to lowercase before comparison.
-Where the same normalised email appears more than once, the earliest submission is retained and subsequent submissions are marked as duplicates.
+Email addresses are trimmed of surrounding whitespace and converted to lowercase before comparison. Where the same normalised email appears more than once, the earliest submission is retained and subsequent submissions are marked as duplicates.
 
-# Rule 2: Shared-phone burst
+### Rule 2: Shared-phone burst
 
-A group is held for review when:
-At least three submissions share the same normalised phone number.
-The submissions come from the same referral source.
-The time between the first and last submission is no more than 10 seconds.
-The submissions have distinct normalised email addresses.
-The entire group is held because the available information does not establish which submission, if any, is genuine.
+A group is held for review when all of the following apply:
 
-# Rule 3: Shared IP address
+- At least three submissions share the same normalised phone number.
+- The submissions come from the same referral source.
+- The time between the first and last submission is no more than 10 seconds.
+- The submissions have distinct normalised email addresses.
+- The entire group is held because the available information does not establish which submission, if any, is genuine.
 
-A shared IP address alone does not cause a submission to be excluded.
-This is important because attendees at the in-person event used shared Wi‑Fi.
+### Rule 3: Shared IP address
 
-# Rule 4: Rapid submissions
+A shared IP address alone does not cause a submission to be excluded. This is important because attendees at the in-person event used shared Wi‑Fi.
+
+### Rule 4: Rapid submissions
 
 Rapid submissions alone do not result in exclusion. Timing is considered alongside other evidence.
 
-# Rule 5: Missing phone number
+### Rule 5: Missing phone number
 
 A missing phone number is recorded as a data-quality warning. It does not automatically exclude a submission, assuming the campaign did not make the phone field mandatory.
