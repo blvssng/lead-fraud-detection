@@ -1,14 +1,15 @@
-# lead-fraud-detection
-Campaign Lead Fraud Review Tool
+# Campaign Lead Fraud Review Tool
 
-# Project Overview
+A small Python tool for reviewing prize-campaign submissions for potential duplicates and suspicious patterns.
 
-This project investigates potential duplicate and suspicious submissions received through a prize entry campaign landing page. The objective is to build a small Python tool that reviews campaign submissions and classifies them according to a set of configured rules.
+## Project overview
 
-Importantly, the tool does not automatically declare submissions fraudulent. It classifies records for reporting purposes as:
+The tool helps campaign operators identify submissions that may need to be excluded from provisional counts or reviewed further. It applies configured rules to submission data and assigns each record a reporting status.
 
-- Count: No configured rule has identified a reason to exclude the submission provisionally.
-- Duplicate: The submission matches an earlier submission based on the defined duplicate rule.
-- Hold for review: The submission has a suspicious pattern that requires further investigation.
+The tool does **not** determine whether a person has committed fraud. Its classifications are intended to support reporting and human review:
 
-A hold does not mean fraud has been proven.
+- **Count** — No configured rule has identified a reason to provisionally exclude the submission.
+- **Duplicate** — The submission matches an earlier submission under the configured duplicate rule.
+- **Hold for review** — The submission has a pattern that warrants further investigation.
+
+A **Hold for review** status is not proof of fraud. Decisions about submissions should be made through appropriate human review.
