@@ -96,12 +96,20 @@ with st.sidebar:
 
     st.divider()
     st.markdown("**Rule Settings**")
-    burst_seconds = st.number_input("Phone burst window (sec)", min_value=0, max_value=300, value=10)
-    min_phone = st.number_input("Min emails (shared phone)", min_value=2, max_value=10, value=3)
-    ip_seconds = st.number_input("IP cluster window (sec)", min_value=0, max_value=300, value=10)
-    min_ip = st.number_input("Min emails (shared IP)", min_value=2, max_value=10, value=3)
-    shared_sources_raw = st.text_input("Exempt shared Wi-Fi", value="event_qr")
-    default_region = st.text_input("Phone region", value="ZW")
+    burst_seconds = st.number_input(
+        "Phone burst window (sec)", min_value=0, max_value=300, value=10, key="burst_seconds"
+    )
+    min_phone = st.number_input(
+        "Min emails (shared phone)", min_value=2, max_value=10, value=3, key="min_phone"
+    )
+    ip_seconds = st.number_input(
+        "IP cluster window (sec)", min_value=0, max_value=300, value=10, key="ip_seconds"
+    )
+    min_ip = st.number_input(
+        "Min emails (shared IP)", min_value=2, max_value=10, value=3, key="min_ip"
+    )
+    shared_sources_raw = st.text_input("Exempt shared Wi-Fi", value="event_qr", key="shared")
+    default_region = st.text_input("Phone region", value="ZW", key="default_region")
 
 rules = Rules(
     burst_window_seconds=int(burst_seconds),
@@ -186,7 +194,7 @@ with hdr_right:
         data=recon_with_total.to_csv(index=False).encode("utf-8"),
         file_name="source_reconciliation.csv",
         mime="text/csv",
-        use_container_width=True,
+        width="stretch",
     )
 
 # --- Top Navigation Tabs ---
@@ -270,7 +278,7 @@ with tab_summary:
         bargroupgap=0.12,
     )
     bar_fig.update_traces(marker_line_width=0, width=0.22)
-    st.plotly_chart(bar_fig, use_container_width=True)
+    st.plotly_chart(bar_fig, width="stretch")
 
     st.divider()
 
@@ -279,7 +287,7 @@ with tab_summary:
 
     with left_col:
         st.markdown('<div class="panel-title">Reconciled Report by Source</div>', unsafe_allow_html=True)
-        st.dataframe(recon_with_total, use_container_width=True, hide_index=True)
+        st.dataframe(recon_with_total, width="stretch", hide_index=True)
 
     with right_col:
         st.markdown('<div class="panel-title">Decision Share</div>', unsafe_allow_html=True)
@@ -306,7 +314,7 @@ with tab_summary:
             legend=dict(orientation="h", yanchor="top", y=-0.05, xanchor="center", x=0.5),
             paper_bgcolor="#ffffff",
         )
-        st.plotly_chart(donut_fig, use_container_width=True)
+        st.plotly_chart(donut_fig, width="stretch")
 
 # ==================== TAB 2: DETAILED QUEUE ====================
 with tab_detailed:
@@ -330,7 +338,7 @@ with tab_detailed:
             | filtered["Email"].str.lower().str.contains(q)
         ]
 
-    st.dataframe(filtered, use_container_width=True, hide_index=True)
+    st.dataframe(filtered, width="stretch", hide_index=True)
 
     st.download_button(
         "Download Filtered Queue (CSV)",
@@ -356,7 +364,7 @@ with tab_sensitivity:
             if row["source"] == "TOTAL"
         ]
     )
-    st.dataframe(sens_df, use_container_width=True, hide_index=True)
+    st.dataframe(sens_df, width="stretch", hide_index=True)
 
 if temp_path and temp_path.exists():
     temp_path.unlink(missing_ok=True)
