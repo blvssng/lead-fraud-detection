@@ -4,7 +4,7 @@ A small, deterministic Python tool for reviewing campaign landing-page submissio
 
 **Important:** a hold means "uncertain / investigate", not "fraud". The supplied export has no confirmed fraud labels.
 
-**Live app:** _add the Streamlit Community Cloud link here after deploying_
+**Live app:** [Open the Campaign Lead Review interface](https://expert-halibut-v6pj4grr5j57cxq57-8501.app.github.dev/)
 
 ## Requirements
 
@@ -84,6 +84,10 @@ python campaign_review.py --input path/to/submissions.csv --output-dir path/to/r
 ```
 
 ## Run: web interface
+
+**Live interface:** [Open Campaign Lead Review](https://expert-halibut-v6pj4grr5j57cxq57-8501.app.github.dev/)
+
+Run the interface locally:
 
 ```bash
 streamlit run app.py
