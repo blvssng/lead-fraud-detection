@@ -1,4 +1,2 @@
-# campaign_review.py itself uses only the Python standard library (Python 3.10+).
-# These two packages are needed only for the web interface (app.py).
 streamlit>=1.30
 pandas>=2.0
