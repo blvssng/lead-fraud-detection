@@ -12,7 +12,7 @@ A small, deterministic Python tool for reviewing campaign landing-page submissio
 ## Project structure
 
 ```text
-campaign-lead-review/
+lead-fraud-detection/
 ├── campaign_review.py
 ├── campaign_submissions.csv
 ├── reviewed_submissions.csv
@@ -21,8 +21,7 @@ campaign-lead-review/
 ├── test_campaign_review.py
 ├── requirements.txt
 ├── README.md
-├── INVESTIGATION_NOTE.md
-└── .venv/                              # optional local virtual environment
+└── INVESTIGATION_NOTE.md
 ```
 
 ## Setup
@@ -36,30 +35,36 @@ python -m venv .venv
 Activate it:
 
 - macOS/Linux: `source .venv/bin/activate`
-- Windows PowerShell: `.venv\Scripts\Activate.ps1`
+- Windows PowerShell: `.venv\\Scripts\\Activate.ps1`
 
 There are no third-party dependencies. You can run the script directly with Python 3.10 or newer.
 
 ## Run
 
-This repo snapshot stores the source CSV at the project root, so the commands below pass the file explicitly and write the generated artifacts in the same directory:
+The default input file is resolved relative to `campaign_review.py`, so it works regardless of the current working directory. By default, output files are written to `outputs/` relative to the current working directory.
 
 Baseline review:
 
 ```bash
-python campaign_review.py --input campaign_submissions.csv --output-dir .
+python campaign_review.py
 ```
 
 Baseline plus threshold/rule sensitivity analysis:
 
 ```bash
-python campaign_review.py --input campaign_submissions.csv --output-dir . --sensitivity
+python campaign_review.py --sensitivity
+```
+
+To provide an explicit input or output directory, relative paths are interpreted from your current working directory:
+
+```bash
+python campaign_review.py --input campaign_submissions.csv --output-dir reports --sensitivity
 ```
 
 The supplied synthetic numbers are Zimbabwean. The built-in normaliser intentionally validates only Zimbabwean mobile formats; other regions are left unvalidated rather than guessed:
 
 ```bash
-python campaign_review.py --input campaign_submissions.csv --output-dir . --default-region ZW --sensitivity
+python campaign_review.py --default-region ZW --sensitivity
 ```
 
 To use another input file or output directory:
@@ -98,13 +103,13 @@ Run the automated tests from the project root:
 python -m unittest test_campaign_review.py -v
 ```
 
-The tests cover duplicate normalisation, shared-phone burst detection, the event-Wi-Fi exemption, missing phone data, reconciliation arithmetic and sensitivity effects.
+The tests cover duplicate normalisation, shared-phone burst detection, the event-Wi-Fi exemption, missing phone data, reconciliation arithmetic, sensitivity effects, and running the CLI from outside the repository directory.
 
 ## Rules and assumptions
 
 1. Duplicate email has precedence over all other rules. The earliest parseable timestamp is retained; equal or unparseable times preserve input order.
 2. A shared phone is held when at least 3 distinct normalised emails share it within 10 seconds, within the same source.
-3. A shared IP is held at 3 distinct emails within 10 seconds, within the same source, except sources configured as shared networks. `event_qr` is exempt because the brief says attendees used shared Wi‑Fi.
+3. A shared IP is held at 3 distinct emails within 10 seconds, within the same source, except sources configured as shared networks. `event_qr` is exempt because the brief says attendees used shared Wi-Fi.
 4. Smaller phone sharing is noted for review but does not change the count.
 5. Missing/invalid data is recorded as a data-quality note. Missing phone numbers cannot trigger phone-based rules.
 6. The brief states that all timestamps are on the same day and in the same time zone; the parser therefore uses time-of-day values.

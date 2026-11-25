@@ -1,4 +1,7 @@
 import csv
+import subprocess
+import sys
+import tempfile
 import unittest
 from pathlib import Path
 
@@ -8,8 +11,8 @@ from campaign_review import (
 )
 
 
-ROOT = Path(__file__).resolve().parents[1]
-SAMPLE = ROOT / "data" / "raw" / "campaign_submissions.csv"
+ROOT = Path(__file__).resolve().parent
+SAMPLE = ROOT / "campaign_submissions.csv"
 
 
 class CampaignReviewTests(unittest.TestCase):
@@ -66,6 +69,27 @@ class CampaignReviewTests(unittest.TestCase):
 
     def test_zw_phone_formats_normalise_to_same_e164(self):
         self.assertEqual(normalise_phone("+263771000001"), normalise_phone("0771000001"))
+
+    def test_cli_default_input_works_outside_repository_directory(self):
+        with tempfile.TemporaryDirectory() as working_dir:
+            output_dir = Path(working_dir) / "reports"
+            result = subprocess.run(
+                [
+                    sys.executable,
+                    str(ROOT / "campaign_review.py"),
+                    "--output-dir",
+                    str(output_dir),
+                    "--sensitivity",
+                ],
+                cwd=working_dir,
+                capture_output=True,
+                text=True,
+                check=True,
+            )
+            self.assertIn("Reviewed 10 submissions.", result.stdout)
+            self.assertTrue((output_dir / "reviewed_submissions.csv").is_file())
+            self.assertTrue((output_dir / "source_reconciliation.csv").is_file())
+            self.assertTrue((output_dir / "sensitivity_report.csv").is_file())
 
 
 if __name__ == "__main__":

@@ -21,6 +21,7 @@ from typing import Any
 import re
 
 REQUIRED_COLUMNS = {"id", "time", "email", "phone", "ip", "source"}
+DEFAULT_INPUT = Path(__file__).resolve().parent / "campaign_submissions.csv"
 
 
 @dataclass(frozen=True)
@@ -379,7 +380,7 @@ def main() -> None:
     parser = argparse.ArgumentParser(
         description="Review campaign submissions using deterministic, explainable rules."
     )
-    parser.add_argument("--input", type=Path, default=Path("data/raw/campaign_submissions.csv"))
+    parser.add_argument("--input", type=Path, default=DEFAULT_INPUT)
     parser.add_argument("--output-dir", type=Path, default=Path("outputs"))
     parser.add_argument("--burst-seconds", type=int, default=10)
     parser.add_argument("--min-shared-phone-entries", type=int, default=3)
