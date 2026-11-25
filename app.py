@@ -1,257 +1,362 @@
-"""Streamlit interface for the campaign lead review tool.
-
-Run with:  streamlit run app.py
-
-This file only handles the screen. Every rule, threshold and report comes from
-campaign_review.py in this repository, and the sample data is the repository's
-own campaign_submissions.csv, so the web app and the command-line tool always
-give identical answers.
-"""
-
-from __future__ import annotations
-
-import tempfile
 from pathlib import Path
-
+import tempfile
 import pandas as pd
+import plotly.express as px
+import plotly.graph_objects as go
 import streamlit as st
 
 from campaign_review import (
-    DEFAULT_INPUT,
     Rules,
     build_reconciliation,
     load_submissions,
     review_submissions,
     run_sensitivity,
     total_row,
-    write_reconciliation_report,
-    write_sensitivity_report,
-    write_submission_report,
 )
 
-DECISION_LABEL = {"count": "count", "duplicate": "duplicate", "hold_for_review": "hold for review"}
-DECISION_COLOUR = {"count": "#E2F0D9", "duplicate": "#FBE5D6", "hold for review": "#FFF2CC"}
-
-st.set_page_config(page_title="Campaign lead review", page_icon="🔎", layout="wide")
-
-
-# --------------------------------------------------------------------------
-# Analysis (cached so moving around the page does not re-run the review)
-# --------------------------------------------------------------------------
-
-@st.cache_data(show_spinner=False)
-def analyse(csv_bytes: bytes, burst_s: int, min_phone: int, ip_s: int, min_ip: int, shared: tuple[str, ...]):
-    """Run the repository's own review and write its own CSV reports to a temp folder."""
-    rules = Rules(
-        burst_window_seconds=burst_s,
-        min_shared_phone_entries=min_phone,
-        ip_window_seconds=ip_s,
-        min_shared_ip_entries=min_ip,
-        shared_network_sources=frozenset(shared),
-    )
-    with tempfile.TemporaryDirectory() as tmp:
-        folder = Path(tmp)
-        source = folder / "input.csv"
-        source.write_bytes(csv_bytes)
-
-        records = review_submissions(load_submissions(source), rules)
-        reconciliation = build_reconciliation(records)
-        sensitivity = run_sensitivity(source, rules)
-
-        # Same writers the command-line tool uses, so downloads match its output exactly.
-        out = folder / "out"
-        write_submission_report(records, out / "reviewed_submissions.csv")
-        write_reconciliation_report(reconciliation, out / "source_reconciliation.csv")
-        write_sensitivity_report(sensitivity, out / "sensitivity_report.csv")
-        files = {path.name: path.read_bytes() for path in out.iterdir()}
-
-    return records, reconciliation, sensitivity, files
-
-
-def decisions_frame(records: list[dict]) -> pd.DataFrame:
-    return pd.DataFrame(
-        {
-            "ID": r["id"],
-            "Time": r["time"],
-            "Email": r["email"],
-            "Phone": r["phone"] or "(missing)",
-            "IP": r["ip"],
-            "Source": r["source"],
-            "Decision": DECISION_LABEL[r["status"]],
-            "Related IDs": ", ".join(r["related_ids"]) or "-",
-            "Reason": r["reason"],
-            "Review notes": "; ".join(r["review_notes"]) or "-",
-            "Data quality": "; ".join(r["data_quality_notes"]) or "-",
-        }
-        for r in records
-    )
-
-
-def colour_rows(row: pd.Series) -> list[str]:
-    return [f"background-color: {DECISION_COLOUR[row['Decision']]}; color: #000000"] * len(row)
-
-
-# --------------------------------------------------------------------------
-# Sidebar: data and rules
-# --------------------------------------------------------------------------
-
-st.title("Campaign lead review")
-st.caption(
-    "Rule-based screening of campaign submissions. **Hold for review means uncertain, "
-    "not fraudulent**: there are no confirmed fraud labels, so nothing here proves fraud."
+# --- Page Config ---
+st.set_page_config(
+    page_title="Lead Review | Admin Dashboard",
+    layout="wide",
+    initial_sidebar_state="expanded",
 )
 
+# --- Clean SaaS Admin Styling ---
+st.markdown(
+    """
+    <style>
+    /* Main background and typography */
+    .stApp {
+        background-color: #ffffff;
+        color: #1e293b;
+        font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, sans-serif;
+    }
+    /* Sidebar styling */
+    section[data-testid="stSidebar"] {
+        background-color: #f8fafc;
+        border-right: 1px solid #e2e8f0;
+    }
+    /* Hide default Streamlit header clutter */
+    #MainMenu {visibility: hidden;}
+    footer {visibility: hidden;}
+    header {visibility: hidden;}
+
+    /* KPI Card styling */
+    .kpi-card {
+        padding: 12px 4px;
+    }
+    .kpi-label {
+        font-size: 0.82rem;
+        color: #64748b;
+        font-weight: 500;
+        margin-bottom: 4px;
+    }
+    .kpi-value {
+        font-size: 2rem;
+        font-weight: 700;
+        color: #0f172a;
+        line-height: 1.1;
+    }
+    .kpi-sub {
+        font-size: 0.78rem;
+        margin-top: 6px;
+        font-weight: 500;
+    }
+    .sub-green { color: #16a34a; }
+    .sub-amber { color: #d97706; }
+    .sub-slate { color: #64748b; }
+
+    /* Section borders */
+    .panel-title {
+        font-size: 1rem;
+        font-weight: 600;
+        color: #0f172a;
+        margin-bottom: 0.75rem;
+    }
+    </style>
+    """,
+    unsafe_allow_html=True,
+)
+
+STATUS_LABELS = {
+    "count": "Count",
+    "duplicate": "Duplicate",
+    "hold_for_review": "Hold for Review",
+}
+
+# --- Left Sidebar ---
 with st.sidebar:
-    st.header("1. Data")
-    choice = st.radio("Input", ["Sample data", "Upload a CSV"], label_visibility="collapsed")
-    csv_bytes = None
-    if choice == "Sample data":
-        if DEFAULT_INPUT.exists():
-            csv_bytes = DEFAULT_INPUT.read_bytes()
-        else:
-            st.error(f"Sample file not found at {DEFAULT_INPUT}")
-    else:
-        uploaded = st.file_uploader("CSV with columns id, time, email, phone, ip, source", type="csv")
-        if uploaded is not None:
-            csv_bytes = uploaded.getvalue()
+    st.markdown("### LeadReview")
+    st.caption("Campaign Data Admin")
+    st.divider()
 
-    st.header("2. Rules")
-    st.caption("Change a setting and the whole report updates.")
-    burst_s = st.number_input("Phone burst window (seconds)", min_value=0, value=10, step=1, key="burst_s")
-    min_phone = st.number_input("Emails sharing a phone to hold", min_value=2, value=3, step=1, key="min_phone")
-    ip_s = st.number_input("IP cluster window (seconds)", min_value=0, value=10, step=1, key="ip_s")
-    min_ip = st.number_input("Emails sharing an IP to hold", min_value=2, value=3, step=1, key="min_ip")
-    shared_text = st.text_input(
-        "Shared-network sources (comma-separated)",
-        value="event_qr",
-        key="shared",
-        help="Sources where many people legitimately share one IP, such as event Wi-Fi. "
-        "A shared IP there is noted but not held.",
-    )
+    st.markdown("**Data Input**")
+    uploaded_file = st.file_uploader("Upload CSV", type=["csv"], label_visibility="collapsed")
+    default_csv = Path("campaign_submissions.csv")
 
-if csv_bytes is None:
-    st.info("Choose the sample data or upload a CSV in the sidebar to start.")
+    st.divider()
+    st.markdown("**Rule Settings**")
+    burst_seconds = st.number_input("Phone burst window (sec)", min_value=0, max_value=300, value=10)
+    min_phone = st.number_input("Min emails (shared phone)", min_value=2, max_value=10, value=3)
+    ip_seconds = st.number_input("IP cluster window (sec)", min_value=0, max_value=300, value=10)
+    min_ip = st.number_input("Min emails (shared IP)", min_value=2, max_value=10, value=3)
+    shared_sources_raw = st.text_input("Exempt shared Wi-Fi", value="event_qr")
+    default_region = st.text_input("Phone region", value="ZW")
+
+rules = Rules(
+    burst_window_seconds=int(burst_seconds),
+    min_shared_phone_entries=int(min_phone),
+    ip_window_seconds=int(ip_seconds),
+    min_shared_ip_entries=int(min_ip),
+    shared_network_sources=frozenset(
+        s.strip() for s in shared_sources_raw.split(",") if s.strip()
+    ),
+)
+
+# --- Load & Evaluate Data ---
+temp_path = None
+if uploaded_file is not None:
+    with tempfile.NamedTemporaryFile(delete=False, suffix=".csv") as tmp:
+        tmp.write(uploaded_file.getvalue())
+        temp_path = Path(tmp.name)
+    csv_path = temp_path
+    active_filename = uploaded_file.name
+elif default_csv.exists():
+    csv_path = default_csv
+    active_filename = default_csv.name
+else:
+    st.error("No CSV uploaded and default 'campaign_submissions.csv' was not found.")
     st.stop()
-
-shared = tuple(sorted(s.strip() for s in shared_text.split(",") if s.strip()))
 
 try:
-    records, reconciliation, sensitivity, files = analyse(
-        csv_bytes, int(burst_s), int(min_phone), int(ip_s), int(min_ip), shared
-    )
-except ValueError as error:
-    st.error(f"Could not read this file: {error}")
+    records = review_submissions(load_submissions(csv_path, default_region), rules)
+    recon = build_reconciliation(records)
+    totals = total_row(recon)
+except Exception as exc:
+    st.error(f"Could not process file: {exc}")
     st.stop()
 
-total = total_row(reconciliation)
+# Build DataFrames
+recon_df = pd.DataFrame(recon).rename(
+    columns={
+        "source": "Source",
+        "raw": "Raw",
+        "provisional_count": "Count",
+        "holds": "Held for Review",
+        "duplicates": "Duplicates",
+        "upper_bound": "Max Possible",
+    }
+)[["Source", "Raw", "Count", "Held for Review", "Duplicates", "Max Possible"]]
 
-# --------------------------------------------------------------------------
-# Headline numbers
-# --------------------------------------------------------------------------
+recon_with_total = pd.DataFrame(recon + [totals]).rename(
+    columns={
+        "source": "Source",
+        "raw": "Raw",
+        "provisional_count": "Count",
+        "holds": "Held for Review",
+        "duplicates": "Duplicates",
+        "upper_bound": "Max Possible",
+    }
+)[["Source", "Raw", "Count", "Held for Review", "Duplicates", "Max Possible"]]
 
-st.success(
-    f"Share **{total['provisional_count']}** with the client as the provisional count. "
-    f"It could rise to **{total['upper_bound']}** if the {total['holds']} held submission(s) are cleared."
-    if total["holds"]
-    else f"Provisional count: **{total['provisional_count']}**. Nothing is held for review."
+queue_rows = [
+    {
+        "ID": r["id"],
+        "Time": r["time"],
+        "Source": r["source"] or "(missing)",
+        "Email": r["email"],
+        "Phone": r["phone_normalised"] or r["phone"] or "—",
+        "Decision": STATUS_LABELS.get(r["status"], r["status"]),
+        "Reason": r["reason"],
+        "Related IDs": ", ".join(r["related_ids"]) or "—",
+    }
+    for r in records
+]
+queue_df = pd.DataFrame(queue_rows)
+
+# --- Top Header Bar ---
+hdr_left, hdr_right = st.columns([3, 1])
+with hdr_left:
+    st.markdown("## Reports")
+    st.caption(f"Active dataset: **{active_filename}** · {totals['raw']} total submissions")
+with hdr_right:
+    st.write("")
+    st.download_button(
+        "Export Report (CSV)",
+        data=recon_with_total.to_csv(index=False).encode("utf-8"),
+        file_name="source_reconciliation.csv",
+        mime="text/csv",
+        use_container_width=True,
+    )
+
+# --- Top Navigation Tabs ---
+tab_summary, tab_detailed, tab_sensitivity = st.tabs(
+    ["Summary", "Detailed Queue", "Rule Sensitivity"]
 )
 
-columns = st.columns(5)
-columns[0].metric("Raw submissions", total["raw"])
-columns[1].metric("Duplicates", total["duplicates"])
-columns[2].metric("Held for review", total["holds"])
-columns[3].metric("Provisional count", total["provisional_count"], help="Conservative figure to share with the client.")
-columns[4].metric("Upper bound", total["upper_bound"], help="The figure if every held submission is later cleared.")
+# ==================== TAB 1: SUMMARY ====================
+with tab_summary:
+    raw_total = max(totals["raw"], 1)
+    count_pct = round((totals["provisional_count"] / raw_total) * 100)
+    hold_pct = round((totals["holds"] / raw_total) * 100)
+    dup_pct = round((totals["duplicates"] / raw_total) * 100)
 
-tab_decisions, tab_sources, tab_change, tab_rules = st.tabs(
-    ["Decisions", "Report by source", "Change a rule", "How the rules work"]
-)
+    # Top KPI Row
+    k1, k2, k3, k4 = st.columns(4)
+    k1.markdown(
+        f"""<div class="kpi-card">
+            <div class="kpi-label">Total Submissions</div>
+            <div class="kpi-value">{totals['raw']}</div>
+            <div class="kpi-sub sub-slate">100% of raw export</div>
+        </div>""",
+        unsafe_allow_html=True,
+    )
+    k2.markdown(
+        f"""<div class="kpi-card">
+            <div class="kpi-label">Ready to Report (Count)</div>
+            <div class="kpi-value">{totals['provisional_count']}</div>
+            <div class="kpi-sub sub-green">{count_pct}% of total</div>
+        </div>""",
+        unsafe_allow_html=True,
+    )
+    k3.markdown(
+        f"""<div class="kpi-card">
+            <div class="kpi-label">Held for Review</div>
+            <div class="kpi-value">{totals['holds']}</div>
+            <div class="kpi-sub sub-amber">{hold_pct}% flagged for check</div>
+        </div>""",
+        unsafe_allow_html=True,
+    )
+    k4.markdown(
+        f"""<div class="kpi-card">
+            <div class="kpi-label">Duplicates Removed</div>
+            <div class="kpi-value">{totals['duplicates']}</div>
+            <div class="kpi-sub sub-slate">{dup_pct}% repeat entries</div>
+        </div>""",
+        unsafe_allow_html=True,
+    )
 
-# --------------------------------------------------------------------------
-# Decisions
-# --------------------------------------------------------------------------
+    st.divider()
 
-with tab_decisions:
-    frame = decisions_frame(records)
-    left, right = st.columns(2)
-    wanted_decisions = left.multiselect("Decision", list(DECISION_LABEL.values()), default=list(DECISION_LABEL.values()))
-    wanted_sources = right.multiselect("Source", sorted(frame["Source"].unique()), default=sorted(frame["Source"].unique()))
+    # Main Grouped Bar Chart (Clean SaaS style)
+    st.markdown('<div class="panel-title">Submissions by Source</div>', unsafe_allow_html=True)
+    melted = recon_df.melt(
+        id_vars="Source",
+        value_vars=["Count", "Held for Review", "Duplicates"],
+        var_name="Status",
+        value_name="Submissions",
+    )
+    bar_fig = px.bar(
+        melted,
+        x="Source",
+        y="Submissions",
+        color="Status",
+        barmode="group",
+        color_discrete_map={
+            "Count": "#5b86c5",
+            "Held for Review": "#f08070",
+            "Duplicates": "#93b096",
+        },
+        height=300,
+    )
+    bar_fig.update_layout(
+        plot_bgcolor="#ffffff",
+        paper_bgcolor="#ffffff",
+        margin=dict(l=10, r=10, t=10, b=10),
+        legend=dict(orientation="h", yanchor="bottom", y=1.02, xanchor="right", x=1, title=None),
+        xaxis=dict(title=None, showgrid=False),
+        yaxis=dict(title=None, gridcolor="#f1f5f9", dtick=1),
+        bargap=0.35,
+        bargroupgap=0.12,
+    )
+    bar_fig.update_traces(marker_line_width=0, width=0.22)
+    st.plotly_chart(bar_fig, use_container_width=True)
 
-    shown = frame[frame["Decision"].isin(wanted_decisions) & frame["Source"].isin(wanted_sources)]
-    st.dataframe(shown.style.apply(colour_rows, axis=1), hide_index=True)
-    st.caption(f"Showing {len(shown)} of {len(frame)} submissions. Duplicates link to the earliest matching entry.")
+    st.divider()
+
+    # Bottom Split: Source Table (Left) + Donut Chart (Right)
+    left_col, right_col = st.columns([1.6, 1])
+
+    with left_col:
+        st.markdown('<div class="panel-title">Reconciled Report by Source</div>', unsafe_allow_html=True)
+        st.dataframe(recon_with_total, use_container_width=True, hide_index=True)
+
+    with right_col:
+        st.markdown('<div class="panel-title">Decision Share</div>', unsafe_allow_html=True)
+        donut_fig = go.Figure(
+            data=[
+                go.Pie(
+                    labels=["Count", "Held for Review", "Duplicates"],
+                    values=[
+                        totals["provisional_count"],
+                        totals["holds"],
+                        totals["duplicates"],
+                    ],
+                    hole=0.62,
+                    marker_colors=["#5b86c5", "#f08070", "#93b096"],
+                    textinfo="percent",
+                    hovertemplate="%{label}: %{value} (%{percent})<extra></extra>",
+                )
+            ]
+        )
+        donut_fig.update_layout(
+            height=260,
+            margin=dict(l=10, r=10, t=10, b=10),
+            showlegend=True,
+            legend=dict(orientation="h", yanchor="top", y=-0.05, xanchor="center", x=0.5),
+            paper_bgcolor="#ffffff",
+        )
+        st.plotly_chart(donut_fig, use_container_width=True)
+
+# ==================== TAB 2: DETAILED QUEUE ====================
+with tab_detailed:
+    f1, f2, f3 = st.columns([2, 1, 1])
+    search_query = f1.text_input("Search by ID or email", placeholder="e.g. L03 or asha@example.com")
+    all_sources = sorted(queue_df["Source"].unique().tolist())
+    selected_sources = f2.multiselect("Source", options=all_sources, default=all_sources)
+    selected_statuses = f3.multiselect(
+        "Decision",
+        options=["Count", "Hold for Review", "Duplicate"],
+        default=["Count", "Hold for Review", "Duplicate"],
+    )
+
+    filtered = queue_df[
+        queue_df["Source"].isin(selected_sources) & queue_df["Decision"].isin(selected_statuses)
+    ]
+    if search_query.strip():
+        q = search_query.strip().lower()
+        filtered = filtered[
+            filtered["ID"].str.lower().str.contains(q)
+            | filtered["Email"].str.lower().str.contains(q)
+        ]
+
+    st.dataframe(filtered, use_container_width=True, hide_index=True)
 
     st.download_button(
-        "Download decisions (CSV)", files["reviewed_submissions.csv"], "reviewed_submissions.csv", "text/csv"
+        "Download Filtered Queue (CSV)",
+        data=filtered.to_csv(index=False).encode("utf-8"),
+        file_name="reviewed_submissions.csv",
+        mime="text/csv",
     )
 
-# --------------------------------------------------------------------------
-# Report by source
-# --------------------------------------------------------------------------
-
-with tab_sources:
-    report = pd.DataFrame(reconciliation + [total]).rename(
-        columns={
-            "source": "Source", "raw": "Raw", "duplicates": "Duplicates", "holds": "Held for review",
-            "provisional_count": "Provisional count", "upper_bound": "Upper bound",
-        }
+# ==================== TAB 3: RULE SENSITIVITY ====================
+with tab_sensitivity:
+    st.markdown('<div class="panel-title">Impact of Changing Rule Thresholds</div>', unsafe_allow_html=True)
+    sensitivity_rows = run_sensitivity(csv_path, rules, default_region)
+    sens_df = pd.DataFrame(
+        [
+            {
+                "Scenario": row["setting"],
+                "Count": row["provisional_count"],
+                "Held for Review": row["holds"],
+                "Change vs Baseline": f"{row['provisional_vs_baseline']:+d}",
+                "Affected IDs": row["rows_changed"] or "None",
+            }
+            for row in sensitivity_rows
+            if row["source"] == "TOTAL"
+        ]
     )
-    st.dataframe(report, hide_index=True)
-    st.caption("Every source reconciles: raw = duplicates + held for review + provisional count.")
+    st.dataframe(sens_df, use_container_width=True, hide_index=True)
 
-    chart = report[report["Source"] != "TOTAL"].set_index("Source")[["Provisional count", "Held for review", "Duplicates"]]
-    st.bar_chart(chart)
-
-    st.download_button(
-        "Download report by source (CSV)", files["source_reconciliation.csv"], "source_reconciliation.csv", "text/csv"
-    )
-
-# --------------------------------------------------------------------------
-# Change a rule
-# --------------------------------------------------------------------------
-
-with tab_change:
-    st.write(
-        "The same data re-run with one threshold or rule changed, compared with the rules in the sidebar. "
-        "This shows how much the client's number depends on the choices made."
-    )
-    totals = pd.DataFrame([r for r in sensitivity if r["source"] == "TOTAL"])
-    view = totals[["scenario", "provisional_count", "holds", "provisional_vs_baseline", "rows_changed", "setting"]].rename(
-        columns={
-            "scenario": "Scenario", "setting": "What changed", "provisional_count": "Provisional count",
-            "holds": "Held", "provisional_vs_baseline": "Change vs baseline", "rows_changed": "Rows that moved",
-        }
-    )
-    st.dataframe(view, hide_index=True)
-    st.bar_chart(view.set_index("Scenario")["Provisional count"])
-    st.caption(
-        "A burst that sits right on a threshold flips from held to counted with a small change, "
-        "and removing the event Wi-Fi exemption holds every legitimate event entry."
-    )
-
-    st.download_button(
-        "Download sensitivity report (CSV)", files["sensitivity_report.csv"], "sensitivity_report.csv", "text/csv"
-    )
-
-# --------------------------------------------------------------------------
-# Rules
-# --------------------------------------------------------------------------
-
-with tab_rules:
-    st.markdown(
-        """
-Each submission gets exactly one decision, in this order of precedence.
-
-| # | Rule | Decision |
-|---|---|---|
-| 1 | Same email (trimmed, lowercased) as an earlier submission | **duplicate**, linked to the earliest |
-| 2 | Several different emails share one phone number, from one source, within the burst window | **hold for review** |
-| 3 | Several different emails share one IP, from one source, within the window, unless the source is a shared network | **hold for review** |
-| 4 | Shared IP inside a shared-network source such as event Wi-Fi | **count**, with a review note |
-| 5 | Anything else | **count** |
-
-Zimbabwean phone numbers are standardised, so `+263771000001` and `0771000001` are the same number.
-A blank phone is missing data and never matches anything. A hold is reversible: it means
-"look at this before reporting it", not "this is fraud".
-"""
-    )
+if temp_path and temp_path.exists():
+    temp_path.unlink(missing_ok=True)
