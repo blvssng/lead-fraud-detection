@@ -52,8 +52,8 @@ Do not label or reject these entrants as fraudulent on this dataset alone. Keep 
 
 ## AI-use note
 
-AI assistance was used to review the initial implementation, identify execution/setup and edge-case risks, structure the README and tests, and help explain the rule outcomes.
+AI assistance was used to review the initial implementation, identify execution/setup and edge-case risks,
 
 ## Implementation note
 
-The final version uses only the Python standard library. Its phone normaliser is intentionally scoped to the Zimbabwean mobile-number formats present in this assessment; it does not claim to validate numbers for other countries.
+The final version uses only the Python standard library. Its phone normaliser is intentionally scoped to the Zimbabwean mobile number formats present in this assessment; it does not claim to validate numbers for other countries.
