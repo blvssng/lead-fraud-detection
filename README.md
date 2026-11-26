@@ -4,7 +4,7 @@ A small, deterministic Python tool for reviewing campaign landing-page submissio
 
 **Important:** a hold means "uncertain / investigate", not "fraud". The supplied export has no confirmed fraud labels.
 
-**Live app:** _ [Deploying a public link](blvssng/lead-fraud-detection/main/app.py
+**Live app:** _ [Deploying a public link](https://lead-fraud-detection-fwxagq5ssvypx7j9nvg7wb.streamlit.app)
 
 
 ))_
