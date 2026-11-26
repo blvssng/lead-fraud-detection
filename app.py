@@ -1,11 +1,13 @@
-from pathlib import Path
 import tempfile
+from pathlib import Path
+
 import pandas as pd
 import plotly.express as px
 import plotly.graph_objects as go
 import streamlit as st
 
 from campaign_review import (
+    DEFAULT_INPUT,
     Rules,
     build_reconciliation,
     load_submissions,
@@ -13,12 +15,23 @@ from campaign_review import (
     run_sensitivity,
     total_row,
 )
+from dashboard_helpers import (
+    STATUS_LABELS,
+    build_report_files,
+    UNCHECKED_SHARE,
+    data_quality_summary,
+    filter_queue,
+    queue_frame,
+    unchecked_share,
+)
 
 # --- Page Config ---
+# "auto" keeps the settings sidebar open on desktop and collapsed on a phone,
+# so mobile visitors see the dashboard first and can open the settings when they want.
 st.set_page_config(
     page_title="Lead Review | Admin Dashboard",
     layout="wide",
-    initial_sidebar_state="expanded",
+    initial_sidebar_state="auto",
 )
 
 # --- Clean SaaS Admin Styling ---
@@ -36,10 +49,14 @@ st.markdown(
         background-color: #f8fafc;
         border-right: 1px solid #e2e8f0;
     }
-    /* Hide default Streamlit header clutter */
+    /* Hide the developer items (Deploy button, menu) but NOT the toolbar itself:
+       it also holds the button that re-opens the settings sidebar on a phone. */
     #MainMenu {visibility: hidden;}
     footer {visibility: hidden;}
-    header {visibility: hidden;}
+    [data-testid="stAppDeployButton"],
+    [data-testid="stToolbarActions"],
+    [data-testid="stMainMenu"] {display: none !important;}
+    div[data-testid="stDecoration"] {display: none;}
 
     /* KPI Card styling */
     .kpi-card {
@@ -66,6 +83,22 @@ st.markdown(
     .sub-amber { color: #d97706; }
     .sub-slate { color: #64748b; }
 
+    /* Recommendation line */
+    .recommendation {
+        background: #f8fafc;
+        border-left: 4px solid #5b86c5;
+        border-radius: 4px;
+        padding: 10px 16px;
+        margin: 4px 0 14px 0;
+        color: #0f172a;
+    }
+    .recommendation-label {
+        font-size: 0.72rem;
+        text-transform: uppercase;
+        letter-spacing: 0.08em;
+        color: #64748b;
+    }
+
     /* Section borders */
     .panel-title {
         font-size: 1rem;
@@ -73,16 +106,29 @@ st.markdown(
         color: #0f172a;
         margin-bottom: 0.75rem;
     }
+    @media (max-width: 640px) {
+        .block-container { padding-top: 3.2rem !important; }
+    }
     </style>
     """,
     unsafe_allow_html=True,
 )
 
-STATUS_LABELS = {
-    "count": "Count",
-    "duplicate": "Duplicate",
-    "hold_for_review": "Hold for Review",
-}
+
+def kpi_card(label: str, value, sub: str, tone: str) -> str:
+    """HTML for one headline number. Only numbers and fixed text are inserted."""
+    return (
+        f'<div class="kpi-card">'
+        f'<div class="kpi-label">{label}</div>'
+        f'<div class="kpi-value">{value}</div>'
+        f'<div class="kpi-sub sub-{tone}">{sub}</div>'
+        f"</div>"
+    )
+
+
+def plural(n: int, one: str, many: str) -> str:
+    return one if n == 1 else many
+
 
 # --- Left Sidebar ---
 with st.sidebar:
@@ -92,7 +138,6 @@ with st.sidebar:
 
     st.markdown("**Data Input**")
     uploaded_file = st.file_uploader("Upload CSV", type=["csv"], label_visibility="collapsed")
-    default_csv = Path("campaign_submissions.csv")
 
     st.divider()
     st.markdown("**Rule Settings**")
@@ -108,8 +153,20 @@ with st.sidebar:
     min_ip = st.number_input(
         "Min emails (shared IP)", min_value=2, max_value=10, value=3, key="min_ip"
     )
-    shared_sources_raw = st.text_input("Exempt shared Wi-Fi", value="event_qr", key="shared")
-    default_region = st.text_input("Phone region", value="ZW", key="default_region")
+    shared_sources_raw = st.text_input(
+        "Exempt shared Wi-Fi",
+        value="event_qr",
+        key="shared",
+        help="Comma-separated sources where many people legitimately share one IP, "
+        "such as an in-person event. A shared IP there is noted but not held.",
+    )
+    default_region = st.text_input(
+        "Phone region",
+        value="ZW",
+        key="default_region",
+        help="Only ZW (Zimbabwe) numbers can be validated. Any other value switches the "
+        "phone-sharing check off, and the page will say so.",
+    )
 
 rules = Rules(
     burst_window_seconds=int(burst_seconds),
@@ -122,65 +179,50 @@ rules = Rules(
 )
 
 # --- Load & Evaluate Data ---
-temp_path = None
+# The default file is located relative to campaign_review.py, so the app works
+# from any folder. Uploaded data is written to a temporary folder that is always
+# deleted afterwards, even if processing fails.
 if uploaded_file is not None:
-    with tempfile.NamedTemporaryFile(delete=False, suffix=".csv") as tmp:
-        tmp.write(uploaded_file.getvalue())
-        temp_path = Path(tmp.name)
-    csv_path = temp_path
+    csv_bytes = uploaded_file.getvalue()
     active_filename = uploaded_file.name
-elif default_csv.exists():
-    csv_path = default_csv
-    active_filename = default_csv.name
+elif DEFAULT_INPUT.exists():
+    csv_bytes = DEFAULT_INPUT.read_bytes()
+    active_filename = DEFAULT_INPUT.name
 else:
-    st.error("No CSV uploaded and default 'campaign_submissions.csv' was not found.")
+    st.error("No CSV uploaded and the default 'campaign_submissions.csv' was not found.")
     st.stop()
 
 try:
-    records = review_submissions(load_submissions(csv_path, default_region), rules)
-    recon = build_reconciliation(records)
-    totals = total_row(recon)
+    with tempfile.TemporaryDirectory() as tmp:
+        csv_path = Path(tmp) / "input.csv"
+        csv_path.write_bytes(csv_bytes)
+        records = review_submissions(load_submissions(csv_path, default_region), rules)
+        recon = build_reconciliation(records)
+        totals = total_row(recon)
+        sensitivity_rows = run_sensitivity(csv_path, rules, default_region)
 except Exception as exc:
     st.error(f"Could not process file: {exc}")
     st.stop()
 
+if totals["raw"] == 0:
+    st.warning("The file has column headings but no submissions, so there is nothing to review.")
+    st.stop()
+
+report_files = build_report_files(records, recon, sensitivity_rows)
+
 # Build DataFrames
-recon_df = pd.DataFrame(recon).rename(
-    columns={
-        "source": "Source",
-        "raw": "Raw",
-        "provisional_count": "Count",
-        "holds": "Held for Review",
-        "duplicates": "Duplicates",
-        "upper_bound": "Max Possible",
-    }
-)[["Source", "Raw", "Count", "Held for Review", "Duplicates", "Max Possible"]]
-
-recon_with_total = pd.DataFrame(recon + [totals]).rename(
-    columns={
-        "source": "Source",
-        "raw": "Raw",
-        "provisional_count": "Count",
-        "holds": "Held for Review",
-        "duplicates": "Duplicates",
-        "upper_bound": "Max Possible",
-    }
-)[["Source", "Raw", "Count", "Held for Review", "Duplicates", "Max Possible"]]
-
-queue_rows = [
-    {
-        "ID": r["id"],
-        "Time": r["time"],
-        "Source": r["source"] or "(missing)",
-        "Email": r["email"],
-        "Phone": r["phone_normalised"] or r["phone"] or "—",
-        "Decision": STATUS_LABELS.get(r["status"], r["status"]),
-        "Reason": r["reason"],
-        "Related IDs": ", ".join(r["related_ids"]) or "—",
-    }
-    for r in records
-]
-queue_df = pd.DataFrame(queue_rows)
+RENAME = {
+    "source": "Source",
+    "raw": "Raw",
+    "provisional_count": "Count",
+    "holds": "Held for Review",
+    "duplicates": "Duplicates",
+    "upper_bound": "Max Possible",
+}
+COLUMNS = ["Source", "Raw", "Count", "Held for Review", "Duplicates", "Max Possible"]
+recon_df = pd.DataFrame(recon).rename(columns=RENAME)[COLUMNS]
+recon_with_total = pd.DataFrame(recon + [totals]).rename(columns=RENAME)[COLUMNS]
+queue_df = queue_frame(records)
 
 # --- Top Header Bar ---
 hdr_left, hdr_right = st.columns([3, 1])
@@ -191,11 +233,76 @@ with hdr_right:
     st.write("")
     st.download_button(
         "Export Report (CSV)",
-        data=recon_with_total.to_csv(index=False).encode("utf-8"),
+        data=report_files["source_reconciliation.csv"],
         file_name="source_reconciliation.csv",
         mime="text/csv",
         width="stretch",
     )
+
+# --- Data quality: problems that switch a rule off must never be silent ---
+quality = data_quality_summary(records)
+affected_rows = len(set(quality["bad_time"]) | set(quality["bad_phone"]))
+checks_skipped = unchecked_share(records) >= UNCHECKED_SHARE
+
+# --- What to tell the client ---
+if checks_skipped:
+    recommendation = (
+        f"<b>{totals['provisional_count']}</b> is an unchecked figure: some checks could not run on "
+        "this file (see the warning below). Fix the data and re-upload before reporting a number."
+    )
+elif totals["holds"]:
+    recommendation = (
+        f"Report <b>{totals['provisional_count']}</b> submissions to the client now. "
+        f"This can rise to <b>{totals['upper_bound']}</b> once the {totals['holds']} held "
+        f"{plural(totals['holds'], 'entry is', 'entries are')} checked."
+    )
+else:
+    recommendation = (
+        f"Report <b>{totals['provisional_count']}</b> submissions to the client. "
+        "Nothing is held for review."
+    )
+if affected_rows and not checks_skipped:
+    recommendation += (
+        f" {affected_rows} {plural(affected_rows, 'row', 'rows')} could not be fully checked "
+        "(see the warning below)."
+    )
+st.markdown(
+    f'<div class="recommendation"><div class="recommendation-label">Recommendation</div>'
+    f"{recommendation}</div>",
+    unsafe_allow_html=True,
+)
+
+# --- Data-quality notices ---
+shown_limit = 6
+
+
+def id_text(ids: list[str]) -> str:
+    text = ", ".join(ids[:shown_limit])
+    return text + (f" and {len(ids) - shown_limit} more" if len(ids) > shown_limit else "")
+
+
+if quality["bad_time"]:
+    n = len(quality["bad_time"])
+    st.warning(
+        f"{n} of {totals['raw']} {plural(n, 'row has', 'rows have')} a time the tool cannot read "
+        f"({id_text(quality['bad_time'])}). Times must look like 09:15:01. The time-based checks "
+        "(shared phone bursts and shared networks) were skipped for these rows, so they may be "
+        "counted when they should be held."
+    )
+if quality["bad_phone"]:
+    n = len(quality["bad_phone"])
+    st.warning(
+        f"{n} {plural(n, 'phone number', 'phone numbers')} could not be validated "
+        f"({id_text(quality['bad_phone'])}). Only Zimbabwean numbers are supported, so the "
+        "phone-sharing check was skipped for these rows."
+    )
+if quality["missing_phone"] or quality["missing_other"]:
+    parts = []
+    if quality["missing_phone"]:
+        parts.append(f"no phone number: {id_text(quality['missing_phone'])}")
+    if quality["missing_other"]:
+        parts.append(f"other missing details: {id_text(quality['missing_other'])}")
+    st.info("Some entries are incomplete (" + "; ".join(parts) + "). Checks that need those details could not be applied to them.")
 
 # --- Top Navigation Tabs ---
 tab_summary, tab_detailed, tab_sensitivity = st.tabs(
@@ -208,41 +315,15 @@ with tab_summary:
     count_pct = round((totals["provisional_count"] / raw_total) * 100)
     hold_pct = round((totals["holds"] / raw_total) * 100)
     dup_pct = round((totals["duplicates"] / raw_total) * 100)
+    max_pct = round((totals["upper_bound"] / raw_total) * 100)
 
     # Top KPI Row
-    k1, k2, k3, k4 = st.columns(4)
-    k1.markdown(
-        f"""<div class="kpi-card">
-            <div class="kpi-label">Total Submissions</div>
-            <div class="kpi-value">{totals['raw']}</div>
-            <div class="kpi-sub sub-slate">100% of raw export</div>
-        </div>""",
-        unsafe_allow_html=True,
-    )
-    k2.markdown(
-        f"""<div class="kpi-card">
-            <div class="kpi-label">Ready to Report (Count)</div>
-            <div class="kpi-value">{totals['provisional_count']}</div>
-            <div class="kpi-sub sub-green">{count_pct}% of total</div>
-        </div>""",
-        unsafe_allow_html=True,
-    )
-    k3.markdown(
-        f"""<div class="kpi-card">
-            <div class="kpi-label">Held for Review</div>
-            <div class="kpi-value">{totals['holds']}</div>
-            <div class="kpi-sub sub-amber">{hold_pct}% flagged for check</div>
-        </div>""",
-        unsafe_allow_html=True,
-    )
-    k4.markdown(
-        f"""<div class="kpi-card">
-            <div class="kpi-label">Duplicates Removed</div>
-            <div class="kpi-value">{totals['duplicates']}</div>
-            <div class="kpi-sub sub-slate">{dup_pct}% repeat entries</div>
-        </div>""",
-        unsafe_allow_html=True,
-    )
+    k1, k2, k3, k4, k5 = st.columns(5)
+    k1.markdown(kpi_card("Total Submissions", totals["raw"], "100% of raw export", "slate"), unsafe_allow_html=True)
+    k2.markdown(kpi_card("Provisional Count", totals["provisional_count"], f"{count_pct}% of total", "green"), unsafe_allow_html=True)
+    k3.markdown(kpi_card("Held for Review", totals["holds"], f"{hold_pct}% flagged for check", "amber"), unsafe_allow_html=True)
+    k4.markdown(kpi_card("Duplicates Removed", totals["duplicates"], f"{dup_pct}% repeat entries", "slate"), unsafe_allow_html=True)
+    k5.markdown(kpi_card("Maximum if Cleared", totals["upper_bound"], f"{max_pct}% if every hold is cleared", "slate"), unsafe_allow_html=True)
 
     st.divider()
 
@@ -319,30 +400,38 @@ with tab_summary:
 # ==================== TAB 2: DETAILED QUEUE ====================
 with tab_detailed:
     f1, f2, f3 = st.columns([2, 1, 1])
-    search_query = f1.text_input("Search by ID or email", placeholder="e.g. L03 or asha@example.com")
+    search_query = f1.text_input(
+        "Search by ID or email", placeholder="e.g. L03 or asha@example.com", key="queue_search"
+    )
     all_sources = sorted(queue_df["Source"].unique().tolist())
     selected_sources = f2.multiselect("Source", options=all_sources, default=all_sources)
-    selected_statuses = f3.multiselect(
-        "Decision",
-        options=["Count", "Hold for Review", "Duplicate"],
-        default=["Count", "Hold for Review", "Duplicate"],
+    decision_options = list(STATUS_LABELS.values())
+    selected_statuses = f3.multiselect("Decision", options=decision_options, default=decision_options)
+
+    filtered = filter_queue(queue_df, search_query, selected_sources, selected_statuses)
+
+    st.dataframe(
+        filtered,
+        width="stretch",
+        hide_index=True,
+        column_config={
+            "Reason": st.column_config.TextColumn("Reason", width="large"),
+            "Review notes": st.column_config.TextColumn("Review notes", width="large"),
+            "Data quality notes": st.column_config.TextColumn("Data quality notes", width="medium"),
+        },
     )
+    st.caption(f"Showing {len(filtered)} of {len(queue_df)} submissions.")
 
-    filtered = queue_df[
-        queue_df["Source"].isin(selected_sources) & queue_df["Decision"].isin(selected_statuses)
-    ]
-    if search_query.strip():
-        q = search_query.strip().lower()
-        filtered = filtered[
-            filtered["ID"].str.lower().str.contains(q)
-            | filtered["Email"].str.lower().str.contains(q)
-        ]
-
-    st.dataframe(filtered, width="stretch", hide_index=True)
-
-    st.download_button(
+    d1, d2, _ = st.columns([1, 1, 2])
+    d1.download_button(
         "Download Filtered Queue (CSV)",
         data=filtered.to_csv(index=False).encode("utf-8"),
+        file_name="filtered_queue.csv",
+        mime="text/csv",
+    )
+    d2.download_button(
+        "Download All Decisions (CSV)",
+        data=report_files["reviewed_submissions.csv"],
         file_name="reviewed_submissions.csv",
         mime="text/csv",
     )
@@ -350,7 +439,6 @@ with tab_detailed:
 # ==================== TAB 3: RULE SENSITIVITY ====================
 with tab_sensitivity:
     st.markdown('<div class="panel-title">Impact of Changing Rule Thresholds</div>', unsafe_allow_html=True)
-    sensitivity_rows = run_sensitivity(csv_path, rules, default_region)
     sens_df = pd.DataFrame(
         [
             {
@@ -365,6 +453,13 @@ with tab_sensitivity:
         ]
     )
     st.dataframe(sens_df, width="stretch", hide_index=True)
-
-if temp_path and temp_path.exists():
-    temp_path.unlink(missing_ok=True)
+    st.caption(
+        "Each scenario re-runs the full review on the same data with one setting changed. "
+        "When a group sits right on a threshold, a small change moves it between held and counted."
+    )
+    st.download_button(
+        "Download Sensitivity Report (CSV)",
+        data=report_files["sensitivity_report.csv"],
+        file_name="sensitivity_report.csv",
+        mime="text/csv",
+    )
