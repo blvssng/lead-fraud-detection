@@ -4,7 +4,7 @@ A small, deterministic Python tool for reviewing campaign landing-page submissio
 
 **Important:** a hold means "uncertain / investigate", not "fraud". The supplied export has no confirmed fraud labels.
 
-**Live app:** _add the Streamlit Community Cloud link here after deploying (see [Deploying a public link](#deploying-a-public-link))_
+**Live app:** _ [Deploying a public link](https://expert-halibut-v6pj4grr5j57cxq57-8501.app.github.dev/))_
 
 ## Requirements
 
